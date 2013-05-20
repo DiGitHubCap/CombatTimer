@@ -48,7 +48,7 @@ public class CombatTimer extends JavaPlugin implements Listener
           }
       }
     
-    @EventHandler(priority = EventPriority.NORMAL)
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onEntityDamageByEntity (EntityDamageByEntityEvent event)
       {
         if (event.getEntity() instanceof Player)
