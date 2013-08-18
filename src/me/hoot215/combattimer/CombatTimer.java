@@ -18,10 +18,9 @@
 
 package me.hoot215.combattimer;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.WeakHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
@@ -29,22 +28,74 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public class CombatTimer extends JavaPlugin implements Listener
   {
-    private static CombatTimer instance = null;
-    private final ExecutorService notifierPool = Executors
-        .newCachedThreadPool();
     private final Map<Player, Long> timeouts = new WeakHashMap<Player, Long>();
+    private final Map<Player, Integer> playerTimers =
+        new HashMap<Player, Integer>();
+    
+    public void doTimeoutCheck (final Player player)
+      {
+        if ( !this.isOnTimeout(player))
+          {
+            player.sendMessage(ChatColor.RED
+                + "You are in combat! You cannot logout for 10 seconds");
+          }
+        this.setTimeout(player, 10000);
+        if ( !playerTimers.containsKey(player))
+          {
+            int id =
+                this.getServer().getScheduler()
+                    .scheduleSyncRepeatingTask(this, new Runnable()
+                      {
+                        @Override
+                        public void run ()
+                          {
+                            if (player.isOnline() && !isOnTimeout(player))
+                              {
+                                player.sendMessage(ChatColor.GREEN
+                                    + "You can now logout");
+                                getServer().getScheduler().cancelTask(
+                                    playerTimers.get(player));
+                                playerTimers.remove(player);
+                              }
+                          }
+                      }, 0, 20);
+            playerTimers.put(player, id);
+          }
+      }
     
     @EventHandler(priority = EventPriority.LOWEST)
     public void onPlayerQuit (PlayerQuitEvent event)
       {
+        if (playerTimers.containsKey(event.getPlayer()))
+          {
+            this.getServer().getScheduler()
+                .cancelTask(playerTimers.get(event.getPlayer()));
+            playerTimers.remove(event.getPlayer());
+          }
         if (this.isOnTimeout(event.getPlayer()))
           {
             event.getPlayer().setHealth(0);
+          }
+      }
+    
+    @EventHandler(priority = EventPriority.NORMAL)
+    public void onPlayerDeath (PlayerDeathEvent event)
+      {
+        if (playerTimers.containsKey(event.getEntity()))
+          {
+            this.getServer().getScheduler()
+                .cancelTask(playerTimers.get(event.getEntity()));
+            playerTimers.remove(event.getEntity());
+          }
+        if (this.isOnTimeout(event.getEntity()))
+          {
+            this.setTimeout(event.getEntity(), 0);
           }
       }
     
@@ -53,51 +104,12 @@ public class CombatTimer extends JavaPlugin implements Listener
       {
         if (event.getEntity() instanceof Player)
           {
-            final Player player = (Player) event.getEntity();
-            if ( !this.isOnTimeout(player))
-              {
-                player.sendMessage(ChatColor.RED
-                    + "You are in combat! You cannot logout for 10 seconds");
-              }
-            timeouts.put(player, System.currentTimeMillis() + 10000L);
-            notifierPool.submit(new Runnable()
-              {
-                public void run ()
-                  {
-                    try
-                      {
-                        Thread.sleep(10010L);
-                      }
-                    catch (InterruptedException e)
-                      {
-                        e.printStackTrace();
-                      }
-                    if (player.isOnline() && !instance.isOnTimeout(player))
-                      {
-                        player.sendMessage(ChatColor.GREEN
-                            + "You can now logout");
-                      }
-                  }
-              });
+            this.doTimeoutCheck((Player) event.getEntity());
           }
-      }
-    
-    @Override
-    public void onDisable ()
-      {
-        instance = null;
-        
-        this.getLogger().info("Is now disabled");
-      }
-    
-    @Override
-    public void onEnable ()
-      {
-        instance = this;
-        
-        this.getServer().getPluginManager().registerEvents(this, this);
-        
-        this.getLogger().info("Is now enabled");
+        if (event.getDamager() instanceof Player)
+          {
+            this.doTimeoutCheck((Player) event.getDamager());
+          }
       }
     
     private boolean isOnTimeout (Player player)
@@ -105,5 +117,24 @@ public class CombatTimer extends JavaPlugin implements Listener
         if ( !timeouts.containsKey(player))
           return false;
         return timeouts.get(player) > System.currentTimeMillis();
+      }
+    
+    private void setTimeout (Player player, long time)
+      {
+        timeouts.put(player, System.currentTimeMillis() + time);
+      }
+    
+    @Override
+    public void onDisable ()
+      {
+        this.getLogger().info("Is now disabled");
+      }
+    
+    @Override
+    public void onEnable ()
+      {
+        this.getServer().getPluginManager().registerEvents(this, this);
+        
+        this.getLogger().info("Is now enabled");
       }
   }
